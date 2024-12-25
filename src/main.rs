@@ -1,21 +1,122 @@
-use std::{error::Error, io};
+use std::{
+    error::Error,
+    fs::{create_dir_all, File},
+    io::{self, BufReader, Read, Write},
+    path::PathBuf,
+    thread::sleep,
+    time::Duration,
+};
 
 use app::App;
+use clap::Parser;
+use config::Config;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    prelude::{Backend, Constraint, CrosstermBackend, Direction, Layout},
-    style::{Modifier, Style},
-    widgets::{Block, BorderType, Borders, HighlightSpacing, Row, Table, TableState},
-    Terminal,
-};
+use dirs::config_dir;
+use ratatui::{prelude::CrosstermBackend, Terminal};
+use ui::run_app;
 
 mod app;
+mod ui;
+
+// const DEFAULT_CONFIG_FILE: &str = "/home/jeanpierre/.config/timers_tui/config.toml";
+// const DEFAULT_SAVE_FILE: &str = "/home/jeanpierre/.config/timers_tui/saved_timers.json";
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct CliOpts {
+    #[arg(short, long, value_name = "FILE")]
+    config: Option<PathBuf>,
+
+    #[arg(short, long, value_name = "FILE")]
+    save_file: Option<PathBuf>,
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = CliOpts::parse();
+
+    // let config_filename = match args.config {
+    //     Some(filename) => filename,
+    //     None => PathBuf::from(DEFAULT_CONFIG_FILE),
+    // };
+
+    let config_filename = match args.config {
+        Some(filename) => Some(filename),
+        None => match config_dir() {
+            Some(mut config_path) => {
+                config_path.push("timers_tui");
+                config_path.push("config.toml");
+                Some(config_path)
+            }
+            None => None,
+        },
+    };
+
+    // let default_map_generator = || -> HashMap<String, String> {
+    //     let mut map = HashMap::new();
+    //
+    //     println!("Had to use the default generator!");
+    //
+    //     map.insert(String::from("save_file"), String::from(DEFAULT_SAVE_FILE));
+    //
+    //     map
+    // };
+    let config_options = {
+        let settings = Config::builder();
+
+        // let settings = match config_dir() {
+        //     Some(filename) => {
+        //         let mut save_filename = filename;
+        //         save_filename.push("timers_tui");
+        //         save_filename.push("saved_timers.json");
+        //         // println!("{}", save_filename.to_str().unwrap());
+        //         settings.set_default("save_file", save_filename.to_str().unwrap())?
+        //     }
+        //     None => settings,
+        // };
+
+        match config_filename {
+            Some(filename) => {
+                let settings = settings.add_source(config::File::from(filename));
+                match settings.build() {
+                    Ok(options) => Some(options),
+                    Err(_) => None,
+                }
+            }
+            None => match settings.build() {
+                Ok(options) => Some(options),
+                Err(_) => None,
+            },
+        }
+    };
+
+    // println!("{:?}", config_options);
+
+    let mut app = App::new();
+
+    let timers_filename = match args.save_file {
+        Some(filename) => Some(filename),
+        None => match config_options {
+            Some(options) => match options.get(&String::from("save_file")) {
+                Ok(filename) => Some(filename),
+                Err(_) => None,
+            },
+            None => match config_dir() {
+                Some(mut filename) => {
+                    filename.push("timers_tui");
+                    filename.push("saved_timers.json");
+                    Some(filename)
+                }
+                None => None,
+            },
+        },
+    };
+
+    load_timers(&mut app, &timers_filename);
+
     enable_raw_mode()?;
     let mut stderr = io::stderr();
 
@@ -24,22 +125,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stderr);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    match app.successful_init {
+        true => {
+            let _ = run_app(&mut app, &mut terminal);
+        }
+        false => {
+            println!("WARNING: Could not initialize sound playback. You will not hear any sound when an alarm goes off.");
 
-    app.add_timer();
-    app.add_timer();
+            sleep(Duration::from_millis(5000));
 
-    for _ in 1..=10 {
-        app.add_timer();
+            let _ = run_app(&mut app, &mut terminal);
+        }
     }
 
-    // while !app.should_quit {
-    //     run_app(&mut app, &mut terminal)?;
-    //
-    //     app.handle_events()?;
-    // }
-
-    run_app(&mut app, &mut terminal)?;
+    // run_app(&mut app, &mut terminal)?;
 
     // STUFF HERE
     // sleep(Duration::from_secs(5));
@@ -52,121 +151,69 @@ fn main() -> Result<(), Box<dyn Error>> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
+
+    save_timers(&app, &timers_filename);
+
+    // println!("{}", app.dump_json());
+
     Ok(())
 }
 
-fn run_app<B: Backend>(app: &mut App, terminal: &mut Terminal<B>) -> Result<(), Box<dyn Error>> {
-    while !app.should_quit {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Percentage(5),
-                    Constraint::Percentage(85),
-                    Constraint::Percentage(10),
-                ])
-                .split(f.size());
+fn load_timers(app: &mut App, input_filename: &Option<PathBuf>) {
+    // let input_filename = String::from("saved_timers.json");
 
-            let title_block = Block::default().title("Timers").borders(Borders::NONE);
+    match input_filename {
+        Some(input_filename) => {
+            let input_file = File::open(input_filename);
 
-            f.render_widget(title_block, chunks[0]);
+            match input_file {
+                Ok(file) => {
+                    let mut reader = BufReader::new(file);
 
-            let mut timer_block_rows = Vec::<Row>::new();
+                    let mut contents = String::new();
 
-            for (i, timer) in app.timers.iter().enumerate() {
-                let mut timer_row = Vec::new();
+                    reader.read_to_string(&mut contents).unwrap();
 
-                timer_row.push(format!("{:4}", i));
-                timer_row.push(timer.title.clone());
-                timer_row.push(format!(
-                    "{}.{:04}",
-                    timer.time_left.as_secs(),
-                    timer.time_left.as_millis()
-                ));
-                // timer_row.push(timer_box.timer.time_left);
-                timer_row.push(format!(
-                    "{}.{:04}",
-                    timer.length.as_secs(),
-                    timer.length.as_millis()
-                ));
-                // timer_row.push(timer_box.timer.length);
-                timer_row.push(format!("{}", timer.running));
-                // timer_row.push(timer_box.timer.running);
-                //
-                timer_block_rows.push(Row::new(timer_row));
+                    match app.read_from_json(&contents) {
+                        Ok(_) => (),
+                        Err(_) => println!("Could not parse the saved timers json file correctly"),
+                    }
+                }
+                Err(_) => println!("Could not open the saved timers json file"),
             }
-
-            let mut state = TableState::default().with_selected(app.selected_timer);
-            // let mut state = TableState::default().with_selected(Some(0));
-
-            let timer_block_table = Table::new(timer_block_rows)
-                .header(Row::new(vec![
-                    "Timer #",
-                    "Timer Description",
-                    "Duration Left",
-                    "Total",
-                    "Running",
-                ]))
-                .widths(&[
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(15),
-                ])
-                .block(Block::default().title("Timers").borders(Borders::ALL))
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                .highlight_symbol(">>")
-                .highlight_spacing(HighlightSpacing::Always);
-
-            //f.render_widget(timer_block_table, chunks[1]);
-
-            f.render_stateful_widget(timer_block_table, chunks[1], &mut state);
-
-            // let mut timer_list_items = Vec::<ListItem>::new();
-            //
-            // for timer_box in app.timers {
-            //     timer_list_items.push(ListItem::new(timer_box.title.clone()));
-            // }
-            //
-            // let timer_block_list = List::new(timer_list_items)
-            //     .block(Block::default().title("Timers").borders(Borders::ALL));
-            //
-            // f.render_widget(timer_block_list, chunks[1]);
-
-            let commands_block = Block::default()
-                .title("Commands")
-                .borders(Borders::ALL)
-                .border_style(Style::default())
-                .border_type(BorderType::Rounded);
-
-            f.render_widget(commands_block, chunks[2]);
-        })?;
-
-        app.handle_events()?;
-
-        app.update_timers();
+        }
+        None => println!("Could not find a command line argument, configuration option, or default value specifying which file to load timers from"), 
     }
-    Ok(())
 }
 
-// fn timers_test() {
-//     let mut timers = Vec::new();
-//
-//     for i in 1..=5 {
-//         timers.push(Timer::new(Duration::from_secs(5 * i)));
-//     }
-//
-//     while !&timers.is_empty() {
-//         timers.retain(|i| {
-//             if let Some(t) = i.time_left() {
-//                 println!("{}", format!("{}.{:03}", t.as_secs(), t.subsec_millis()));
-//                 true
-//             } else {
-//                 false
-//             }
-//         });
-//
-//         sleep(Duration::from_millis(17));
-//     }
-// }
+fn write_timers_file(app: &App, output_filename: &PathBuf) {
+    let output_file = File::create(output_filename);
+
+    match output_file {
+        Ok(mut file) => match file.write_all(app.dump_json().as_bytes()) {
+            Ok(_) => (),
+            Err(_) => eprintln!("Could not save timers to json file"),
+        },
+        Err(_) => eprintln!("Could not open json file to save timers to"),
+    }
+}
+
+fn save_timers(app: &App, output_filename: &Option<PathBuf>) {
+    // let output_filename = String::from("saved_timers.json");
+    match output_filename {
+        Some(output_filename) => {
+            if !output_filename.exists() {
+                match output_filename.parent() {
+                    Some(filepath) => match create_dir_all(filepath) {
+                        Ok(_) => write_timers_file(app, &output_filename),
+                        Err(_) => eprintln!("Could not create directory to save timers file to"),
+                    },
+                    None => eprintln!("Cannot save timers to '/'"),
+                }
+            } else {
+                write_timers_file(app, &output_filename);
+            }
+        }
+        None => println!("Could not find a command line argument, configuration option, or default value specifying which file to save timers to"),
+    }
+}
