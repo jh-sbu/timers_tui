@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use lazy_static::lazy_static;
 use rodio::{source::SineWave, Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use serde::{Deserialize, Serialize};
@@ -690,18 +690,27 @@ impl App<'_> {
                         },
 
                         AppScreen::Editing(edit_field) => match edit_field {
-                            EditField::Description => match key.code {
-                                KeyCode::Tab => self.screen = AppScreen::Editing(EditField::Hours1),
-                                KeyCode::BackTab => {
-                                    self.screen = AppScreen::Editing(EditField::Seconds2)
+                            EditField::Description => match key.modifiers {
+                                KeyModifiers::CONTROL => {
+                                    if let KeyCode::Char('k') = key.code {
+                                        self.edit_values.descript = TextArea::default();
+                                    }
                                 }
-                                KeyCode::Enter => {
-                                    self.replace_timer();
-                                    self.screen = AppScreen::Main;
-                                }
-                                _ => {
-                                    self.edit_values.descript.input(key);
-                                } // _ => todo!(),
+                                _ => match key.code {
+                                    KeyCode::Tab => {
+                                        self.screen = AppScreen::Editing(EditField::Hours1)
+                                    }
+                                    KeyCode::BackTab => {
+                                        self.screen = AppScreen::Editing(EditField::Seconds2)
+                                    }
+                                    KeyCode::Enter => {
+                                        self.replace_timer();
+                                        self.screen = AppScreen::Main;
+                                    }
+                                    _ => {
+                                        self.edit_values.descript.input(key);
+                                    } // _ => todo!(),
+                                },
                             },
                             _ => match key.code {
                                 KeyCode::Tab
