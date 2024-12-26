@@ -255,9 +255,11 @@ impl EditValues<'_> {
     }
 
     fn default() -> EditValues<'static> {
-        let mut lines = Vec::new();
+        // let mut lines = Vec::new();
+        //
+        // lines.push(String::from("New Timer"));
 
-        lines.push(String::from("New Timer"));
+        let lines = vec![String::from("New Timer")];
 
         let mut descript = TextArea::new(lines);
 
@@ -410,9 +412,8 @@ impl AlarmCounter {
             // for _ in 1..=10 {
             //     println!("IT GETS HERE");
             // }
-            match &self.alarm_sink {
-                Some(sink) => sink.play(),
-                None => (),
+            if let Some(sink) = &self.alarm_sink {
+                sink.play()
             }
         }
 
@@ -423,9 +424,8 @@ impl AlarmCounter {
         self.alarming_timers -= 1;
 
         if self.alarming_timers == 0 {
-            match &self.alarm_sink {
-                Some(sink) => sink.pause(),
-                None => (),
+            if let Some(sink) = &self.alarm_sink {
+                sink.pause()
             }
         }
     }
@@ -446,10 +446,7 @@ impl App<'_> {
     pub fn new() -> App<'static> {
         let alarm_counter = AlarmCounter::new("rodio_alarm_test.flac");
 
-        let successful_init = match alarm_counter.alarm_sink {
-            Some(_) => true,
-            None => false,
-        };
+        let successful_init = alarm_counter.alarm_sink.is_some();
         App {
             timers: Vec::new(),
             selected_timer: None,
@@ -520,9 +517,8 @@ impl App<'_> {
         match self.selected_timer {
             None => {}
             Some(i) => {
-                match self.timers[i].state {
-                    TimerState::Alarming => self.alarm_counter.decrease_counter(),
-                    _ => (),
+                if let TimerState::Alarming = self.timers[i].state {
+                    self.alarm_counter.decrease_counter()
                 }
                 self.timers.remove(i);
 
@@ -531,12 +527,10 @@ impl App<'_> {
 
                     if s == 0 {
                         None
+                    } else if s == i {
+                        Some(s - 1)
                     } else {
-                        if s == i {
-                            Some(s - 1)
-                        } else {
-                            Some(i)
-                        }
+                        Some(i)
                     }
                 }
             }
@@ -569,22 +563,21 @@ impl App<'_> {
     }
 
     fn start_timer(&mut self) {
-        match self.selected_timer {
-            Some(i) => match self.timers[i].state {
+        if let Some(i) = self.selected_timer {
+            match self.timers[i].state {
                 TimerState::Stopped => {
                     self.timers[i].state = TimerState::Running;
                     self.timers[i].last_started = Some(Instant::now());
                 }
                 TimerState::Running => (),
                 TimerState::Alarming => (),
-            },
-            None => (),
+            }
         }
     }
 
     fn pause_timer(&mut self) {
-        match self.selected_timer {
-            Some(i) => match self.timers[i].state {
+        if let Some(i) = self.selected_timer {
+            match self.timers[i].state {
                 TimerState::Running => {
                     self.timers[i].state = TimerState::Stopped;
                     self.timers[i].last_started = Some(Instant::now());
@@ -603,21 +596,19 @@ impl App<'_> {
                         self.timers[i].serializeable_parts.length;
                 }
                 TimerState::Stopped => (),
-            },
-            None => (),
+            }
         }
     }
 
     fn toggle_timer(&mut self) {
-        match self.selected_timer {
-            Some(i) => match self.timers[i].state {
+        if let Some(i) = self.selected_timer {
+            match self.timers[i].state {
                 TimerState::Running => self.pause_timer(),
                 TimerState::Stopped => self.start_timer(),
                 // Don't need the alarming branch for pause because nothing
                 // actually calls it?
                 TimerState::Alarming => (),
-            },
-            None => (),
+            }
         }
     }
 
@@ -649,15 +640,12 @@ impl App<'_> {
     }
 
     fn edit_timer(&mut self) {
-        match self.selected_timer {
-            Some(i) => {
-                self.screen = AppScreen::Editing(EditField::Description);
-                self.edit_values = EditValues::new(
-                    self.timers[i].serializeable_parts.description.clone(),
-                    self.timers[i].serializeable_parts.length,
-                )
-            }
-            None => (),
+        if let Some(i) = self.selected_timer {
+            self.screen = AppScreen::Editing(EditField::Description);
+            self.edit_values = EditValues::new(
+                self.timers[i].serializeable_parts.description.clone(),
+                self.timers[i].serializeable_parts.length,
+            )
         }
     }
 
@@ -667,15 +655,11 @@ impl App<'_> {
             self.edit_values.to_duration(),
         );
 
-        match self.selected_timer {
-            Some(i) => {
-                match self.timers[i].state {
-                    TimerState::Alarming => self.alarm_counter.decrease_counter(),
-                    _ => (),
-                }
-                self.timers[i] = new_timer;
+        if let Some(i) = self.selected_timer {
+            if let TimerState::Alarming = self.timers[i].state {
+                self.alarm_counter.decrease_counter()
             }
-            None => (),
+            self.timers[i] = new_timer;
         }
     }
 

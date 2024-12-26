@@ -54,7 +54,7 @@ pub fn run_app<B: Backend>(
                     Constraint::Percentage(85),
                     Constraint::Percentage(10),
                 ])
-                .split(f.size());
+                .split(f.area());
 
             let title_block = Block::default().title("Timers").borders(Borders::NONE);
 
@@ -87,7 +87,7 @@ pub fn run_app<B: Backend>(
                     crate::app::TimerState::Running => "Running",
                     crate::app::TimerState::Alarming => "Alarming",
                 };
-                timer_row.push(format!("{}", state_strslice));
+                timer_row.push(state_strslice.to_string());
                 // timer_row.push(timer_box.timer.running);
                 //
                 timer_block_rows.push(Row::new(timer_row));
@@ -115,7 +115,7 @@ pub fn run_app<B: Backend>(
                     "Status",
                 ]))
                 .block(Block::default().title("Timers").borders(Borders::ALL))
-                .highlight_style(
+                .row_highlight_style(
                     Style::default()
                         .add_modifier(Modifier::BOLD)
                         .add_modifier(Modifier::UNDERLINED),
@@ -170,7 +170,7 @@ pub fn run_app<B: Backend>(
                             Constraint::Percentage(20),
                             Constraint::Percentage(40),
                         ])
-                        .split(f.size());
+                        .split(f.area());
 
                     let editing_layout = Layout::default()
                         .direction(Direction::Horizontal)
@@ -201,7 +201,7 @@ pub fn run_app<B: Backend>(
                         *edit_screen == EditField::Description,
                     ));
 
-                    let desc_input = app.edit_values.descript.widget();
+                    let desc_input = &app.edit_values.descript;
 
                     let hours_block =
                         build_block(String::from("HHH"), HOURS_SET.contains(edit_screen));
@@ -302,7 +302,7 @@ pub fn run_app<B: Backend>(
                             Constraint::Percentage(20),
                             Constraint::Percentage(40),
                         ])
-                        .split(f.size());
+                        .split(f.area());
 
                     let error_layout = Layout::default()
                         .direction(Direction::Horizontal)
