@@ -166,18 +166,18 @@ pub fn run_app<B: Backend>(
                     let editing_layout = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([
-                            Constraint::Percentage(40),
-                            Constraint::Percentage(20),
-                            Constraint::Percentage(40),
+                            Constraint::Percentage(35),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(35),
                         ])
                         .split(f.area());
 
                     let editing_layout = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Percentage(40),
-                            Constraint::Percentage(20),
-                            Constraint::Percentage(40),
+                            Constraint::Percentage(35),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(35),
                         ])
                         .split(editing_layout[1]);
 
